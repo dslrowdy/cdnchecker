@@ -19,14 +19,14 @@ sudo systemctl enable docker
 
 Clone the Repository:
 bash> git clone https://github.com/dslrowdy/cdn-checker-app.git
-cd cdn-checker-app
+cd cdnchecker
 
 
 2. Set Up Directory Structure
 
 Create Directories:
 bash> mkdir -p nginx/certs output data
-chmod -R 777 output data
+bash> chmod -R 777 output data
 
 Generate Certificates:
 bash> openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout nginx/certs/nginx.key -out nginx/certs/nginx.crt -subj "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=localhost"
@@ -34,9 +34,11 @@ bash> openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout nginx/certs/ng
 
 3. Build and Run
 
-Build and Start:
-bash> docker-compose -p cdn-checker-app build --no-cache
-docker-compose -p cdn-checker-app up -d
+Initial Build and Start:
+bash> docker compose up --build -d
+
+Subsequent starts:
+bash> docker compose up -d
 
 Verify Containers:
 bash> docker ps -a
