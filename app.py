@@ -90,7 +90,8 @@ cdn_dict = {
     'Cloudfront': ['cloudfront.net'],
     'Fastly': ['fastly.net','fastlylb.net'],
     'Cloudflare': ['cloudflare.com','cloudflare.net'],
-    'Imperva': ['incapdns.net','sucuri.net'],  # merged Incapsula + Sucuri
+    'Imperva': ['incapdns.net'],
+    'Sucuri': ['sucuri.net'],
     'CDN77': ['cdn77.com'],
     'KeyCDN': ['kxcdn.com'],
     'Edgecast': ['edgecastcdn.net'],
