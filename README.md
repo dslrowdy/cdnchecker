@@ -6,15 +6,14 @@ Install Git and Docker:
 
 Ensure Git and Docker (with Docker Compose) are installed:
 bash> git --version
-docker --version
-docker-compose --version
+bash> docker --version
+bash> docker-compose --version
 
 Install if missing (e.g., on Ubuntu):
 bash> sudo apt update
-sudo apt install git docker.io docker-compose
-sudo systemctl start docker
-sudo systemctl enable docker
-
+bash> sudo apt install git docker.io docker-compose
+bash> sudo systemctl start docker
+bash> sudo systemctl enable docker
 
 
 Clone the Repository:
