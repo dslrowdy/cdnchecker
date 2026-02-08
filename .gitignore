@@ -1,0 +1,66 @@
+# =============================================
+# Python virtual environment (created with python3 -m venv)
+# =============================================
+bin/
+include/
+lib/
+pyvenv.cfg
+
+# Also catch common alternative venv folder names
+venv/
+.venv/
+env/
+
+# =============================================
+# Python bytecode, caches & temporary files
+# =============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Temporary / backup / working files you created
+*.WORKSPERFECTLY
+*.bak
+*.tmp
+*~
+
+# =============================================
+# Project runtime output & generated files
+# =============================================
+output/
+*.xlsx          # all excel results
+results.db      # sqlite database
+*.log
+
+# =============================================
+# Certificates - decide case by case
+#   → currently git-ignored because they are dev/self-signed
+#   → if these become real/production certs → remove this line
+# =============================================
+#certs/
+#nginx/certs/
+
+# If you ever regenerate certs from real CA → keep them out of git
+# and use environment variables / mounted secrets instead
+
+# =============================================
+# macOS / editor / system junk
+# =============================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+
+# Local overrides / experiments
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Optional: if you add IDE project files later
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
