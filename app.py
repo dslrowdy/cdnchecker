@@ -272,6 +272,7 @@ def stream_results(domains, batch_name):
     <div id="progress">Processing...</div>
     <div id="complete" style="display:none">
         <p>Done. <a id="download-link" href="#" target="_blank">Download Excel</a></p>
+        <p><a href="/view">View Database</a></p>
     </div>
     <table><thead><tr>
     <th>AccountOwner</th><th>Site</th><th>CDN</th><th>CDN-Evidence</th><th>ATO</th><th>ATO-Evidence</th>
