@@ -320,15 +320,15 @@ def stream_results(domains, batch_name):
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS domain_results(
-            AccountOwner TEXT, Site TEXT PRIMARY KEY, CDN TEXT, "CDN-Evidence" TEXT, ATO INTEGER, "ATO-Evidence" TEXT,
-            CSP INTEGER, "CSP-Evidence" TEXT, IP TEXT, ASN TEXT, "ASN-Name" TEXT
+            AccountOwner TEXT, Site TEXT PRIMARY KEY, CDN TEXT, "CDN-Evidence" TEXT, ATO TEXT, "ATO-Evidence" TEXT,
+            CSP TEXT, "CSP-Evidence" TEXT, IP TEXT, ASN TEXT, "ASN-Name" TEXT
         )''')
         for r in results:
             c.execute('''INSERT OR REPLACE INTO domain_results
                 (AccountOwner, Site, CDN, "CDN-Evidence", ATO, "ATO-Evidence", CSP, "CSP-Evidence", IP, ASN, "ASN-Name")
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-                (r['AccountOwner'], r['Site'], r['CDN'], r['CDN-Evidence'], int(r['ATO']),
-                 r['ATO-Evidence'], int(r['CSP']), r['CSP-Evidence'], r['IP'], r['ASN'], r['ASN-Name'])
+                (r['AccountOwner'], r['Site'], r['CDN'], r['CDN-Evidence'], str(r['ATO']),
+                 r['ATO-Evidence'], str(r['CSP']), r['CSP-Evidence'], r['IP'], r['ASN'], r['ASN-Name'])
             )
         conn.commit()
         conn.close()
