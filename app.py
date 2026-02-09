@@ -402,6 +402,9 @@ def view_results():
     conn.close()
 
     # Render as HTML table
+    owner = request.args.get("owner", "")      # default to empty string if missing
+    cdn = request.args.get("cdn", "")
+
     html = f"""
     <html><head><title>View Results</title></head><body>
     <h1>Domain Results</h1>
