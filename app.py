@@ -307,9 +307,9 @@ def stream_results(domains, batch_name, company_map=None):
             <td>${res.Site}</td>
             <td>${res.CDN}</td>
             <td>${res['CDN-Evidence'] || ''}</td>
-            <td>${res['ATO Opp'] || ''}</td>
+            <td>${res['ATO Opp'] === true ? 'True' : 'False'}</td>
             <td>${res['ATO-Evidence'] || ''}</td>
-            <td>${res['CSP Opp'] || ''}</td>
+            <td>${res['CSP Opp'] === true ? 'True' : 'False'}</td>
             <td>${res['CSP-Evidence'] || ''}</td>
             <td>${res['DDoS Opp'] === true ? 'True' : 'False'}</td>
             <td>${res.IP || ''}</td>
@@ -387,6 +387,9 @@ def stream_results(domains, batch_name, company_map=None):
     # Save Excel for this batch
     try:
         df = pd.DataFrame(batch_results)
+        # Convert DDoS Opp to "True"/"False" string
+        if 'DDoS Opp' in df.columns:
+            df['DDoS Opp'] = df['DDoS Opp'].map({True: 'True', False: 'False'})
 
         # Reorder columns so AccountOwner is first
         cols = [
@@ -409,15 +412,26 @@ def stream_results(domains, batch_name, company_map=None):
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS domain_results(
-            AccountOwner TEXT, CompanyName TEXT, Site TEXT PRIMARY KEY, CDN TEXT, "CDN-Evidence" TEXT, "ATO Opp" TEXT, "ATO-Evidence" TEXT,
-            "CSP Opp" TEXT, "CSP-Evidence" TEXT, "DDoS Opp" TEXT, IP TEXT, ASN TEXT, "ASN-Name" TEXT
+            AccountOwner TEXT,
+            CompanyName TEXT,
+            Site TEXT PRIMARY KEY,
+            CDN TEXT,
+            "CDN-Evidence" TEXT,
+            "ATO Opp" TEXT,
+            "ATO-Evidence" TEXT,
+            "CSP Opp" TEXT,
+            "CSP-Evidence" TEXT,
+            "DDoS Opp" TEXT,
+            IP TEXT,
+            ASN TEXT,
+            "ASN-Name" TEXT
         )''')
         for r in results:
             c.execute('''INSERT OR REPLACE INTO domain_results
                 (AccountOwner, CompanyName, Site, CDN, "CDN-Evidence", "ATO Opp", "ATO-Evidence", "CSP Opp", "CSP-Evidence", "DDoS Opp", IP, ASN, "ASN-Name")
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                 (r['AccountOwner'], r['CompanyName'], r['Site'], r['CDN'], r['CDN-Evidence'], str(r['ATO Opp']),
-                 r['ATO-Evidence'], str(r['CSP Opp']), r['CSP-Evidence'], r['DDoS Opp'], r['IP'], r['ASN'], r['ASN-Name'])
+                 r['ATO-Evidence'], str(r['CSP Opp']), r['CSP-Evidence'], str(r['DDoS Opp']), r['IP'], r['ASN'], r['ASN-Name'])
             )
         conn.commit()
         conn.close()
