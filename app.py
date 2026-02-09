@@ -1,4 +1,5 @@
-from flask import Flask, request, Response, render_template_string, send_file, url_for
+from flask import Flask, request, Response, redirect, render_template_string, send_file, url_for
+from werkzeug.utils import secure_filename
 import dns.resolver
 import requests
 from requests.exceptions import RequestException
@@ -39,6 +40,16 @@ def cleanup_old_files():
                 except Exception as e:
                     logger.warning(f"Failed to delete {f}: {e}")
 
+# Allowed extension for upload
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+UPLOAD_FOLDER = './uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # DNS resolver setup
 resolver = dns.resolver.Resolver()
@@ -242,7 +253,10 @@ def process_domain(domain):
                     'CSP':False,'CSP-Evidence':'Error','IP':'Unknown','ASN':'Unknown','ASN-Name':'Error'}
 
 # Streaming results
-def stream_results(domains, batch_name):
+def stream_results(domains, batch_name, company_map=None):
+    if company_map is None:
+        company_map = {}
+
     import uuid
     yield '''
     <!DOCTYPE html>
@@ -253,19 +267,32 @@ def stream_results(domains, batch_name):
         th{background-color:#f2f2f2}
     </style>
     <script>
-        function appendResult(res){
-            let t=document.getElementById('results-tbody');
-            let r=t.insertRow(-1);
-            r.innerHTML=`<td>${res.AccountOwner}</td><td>${res.Site}</td><td>${res.CDN}</td><td>${res['CDN-Evidence']}</td>
-            <td>${res.ATO}</td><td>${res['ATO-Evidence']}</td><td>${res.CSP}</td><td>${res['CSP-Evidence']}</td>
-            <td>${res.IP}</td><td>${res.ASN}</td><td>${res['ASN-Name']}</td>`;
-        }
-        function finish(file){
-            document.getElementById('progress').style.display='none';
-            let link=document.getElementById('download-link');
-            link.href="/download?file="+file;
-            document.getElementById('complete').style.display='block';
-        }
+    function appendResult(res){
+        let t = document.getElementById('results-tbody');
+        let r = t.insertRow(-1);
+        r.innerHTML = `
+            <td>${res.AccountOwner || ''}</td>
+            <td>${res.CompanyName || ''}</td>
+            <td>${res.Site}</td>
+            <td>${res.CDN}</td>
+            <td>${res['CDN-Evidence'] || ''}</td>
+            <td>${res.ATO}</td>
+            <td>${res['ATO-Evidence'] || ''}</td>
+            <td>${res.CSP}</td>
+            <td>${res['CSP-Evidence'] || ''}</td>
+            <td>${res.IP || ''}</td>
+            <td>${res.ASN || ''}</td>
+            <td>${res['ASN-Name'] || ''}</td>
+            <td>${res['Infrastructure DDoS'] === true ? 'True' : 'False'}</td>
+        `;
+    }
+
+    function finish(file){
+        document.getElementById('progress').style.display='none';
+        let link=document.getElementById('download-link');
+        link.href="/download?file="+file;
+        document.getElementById('complete').style.display='block';
+    }
     </script>
     </head><body>
     <h1>Processing Domains...</h1>
@@ -276,8 +303,16 @@ def stream_results(domains, batch_name):
         <p><a href="/view">View Database</a></p>
     </div>
     <table><thead><tr>
-    <th>AccountOwner</th><th>Site</th><th>CDN</th><th>CDN-Evidence</th><th>ATO</th><th>ATO-Evidence</th>
-    <th>CSP</th><th>CSP-Evidence</th><th>IP</th><th>ASN</th><th>ASN-Name</th>
+    <th>AccountOwner</th>
+    <th>CompanyName</th>
+    <th>Site</th><th>CDN</th>
+    <th>CDN-Evidence</th>
+    <th>ATO</th><th>ATO-Evidence</th>
+    <th>CSP</th>
+    <th>CSP-Evidence</th>
+    <th>IP</th><th>ASN</th>
+    <th>ASN-Name</th>
+    <th>Infrastructure DDoS</th>
     </tr></thead><tbody id="results-tbody"></tbody></table>
     '''
 
@@ -291,11 +326,23 @@ def stream_results(domains, batch_name):
     db_file = os.path.join(output_dir, 'results.db')
 
     batch_results = []
-
     # Process each domain
     for domain in domains:
         res = process_domain(domain)
         res['AccountOwner'] = batch_name
+        company = company_map.get(domain, batch_name) # fallback to batch_name
+        res['CompanyName'] = company
+        # Compare CompanyName vs ASN-Name for 5-char sequence
+        company_clean = (company or "").lower().replace(" ", "")
+        asn_clean = (res.get('ASN-Name') or "").lower().replace(" ", "")
+        has_match = False
+        if len(company_clean) >= 5 and len(asn_clean) >= 5:
+            for i in range(len(company_clean) - 4):
+                substring = company_clean[i:i+5]
+                if substring in asn_clean:
+                    has_match = True
+                    break
+        res['Infrastructure DDoS'] = has_match   # ← this MUST be indented here (same level as has_match = False)
         batch_results.append(res)
         results.append(res)
         yield f'<script>appendResult({json.dumps(res)});</script>\n'
@@ -306,10 +353,15 @@ def stream_results(domains, batch_name):
         df = pd.DataFrame(batch_results)
 
         # Reorder columns so AccountOwner is first
-        cols = ['AccountOwner', 'Site', 'CDN', 'CDN-Evidence', 'ATO', 'ATO-Evidence',
-                'CSP', 'CSP-Evidence', 'IP', 'ASN', 'ASN-Name']
-        df = df[cols]
-
+        cols = [
+            'CompanyName', 'AccountOwner', 'Site', 'CDN', 'CDN-Evidence',
+            'ATO', 'ATO-Evidence', 'CSP', 'CSP-Evidence',
+            'IP', 'ASN', 'ASN-Name', 'Infrastructure DDoS'
+        ]
+        
+        # Only include columns that exist
+        existing_cols = [c for c in cols if c in df.columns]
+        df = df[existing_cols]
         df.to_excel(excel_path, index=False)
 
     except Exception as e:
@@ -341,40 +393,77 @@ def stream_results(domains, batch_name):
     </body></html>'''
 
 # Routes
-@app.route('/',methods=['GET','POST'])
+@app.route('/', methods=['GET', 'POST'])
 def index():
     cleanup_old_files()
-    if request.method=='POST':
-        batch_name=request.form.get('batch_name','').strip()
-        domains_raw=request.form.get('domains','').strip()
-        if not batch_name: return "Batch name required",400
-        domains=[d.strip() for d in domains_raw.splitlines() if d.strip()]
-        if not domains: return "At least one domain required",400
-        return Response(stream_results(domains,batch_name),mimetype='text/html')
+    if request.method == 'POST':
+        batch_name = request.form.get('batch_name', '').strip()
+        if not batch_name:
+            return "Batch name required", 400
+
+        domains = []
+        company_map = {}  # domain → company name
+
+        # Option 1: textarea
+        domains_text = request.form.get('domains', '').strip()
+        if domains_text:
+            domains = [d.strip() for d in domains_text.splitlines() if d.strip()]
+            for d in domains:
+                company_map[d] = batch_name  # fallback to batch name
+
+        # Option 2: Excel file upload (takes priority if both provided)
+        if 'file' in request.files:
+            file = request.files['file']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                try:
+                    df_upload = pd.read_excel(filepath)
+                    # Expected columns (case insensitive)
+                    df_upload.columns = df_upload.columns.str.strip().str.lower()
+                    if 'domain name' in df_upload.columns and 'company name' in df_upload.columns:
+                        for _, row in df_upload.iterrows():
+                            domain = str(row['domain name']).strip()
+                            company = str(row['company name']).strip()
+                            if domain:
+                                domains.append(domain)
+                                company_map[domain] = company
+                    else:
+                        return "Excel must have columns 'Company Name' and 'Domain Name'", 400
+                except Exception as e:
+                    return f"Error reading Excel: {str(e)}", 400
+
+        if not domains:
+            return "Provide domains (textarea or Excel file)", 400
+
+        # Pass company mapping to stream_results
+        return Response(stream_results(domains, batch_name, company_map), mimetype='text/html')
+
+    # GET - show form with both options
     return render_template_string('''
-    <html><head><title>Domain CDN Checker</title></head><body>
-    <h1>Domain CDN Checker</h1>
-    <p><a href="/view">View Database</a></p>
-    <form method="post">
-    <label>Account Owner:</label>
-        <input
-            type="text"
-            name="batch_name"
-            required
-            placeholder="John Smith"
-            style="width:100%"><br>
-    <label>Subdomains (one per line):</label>
-        <textarea
-            name="domains"
-            rows="10"
-            required
-            placeholder="www.example.com
-shop.example.com
-api.example.com
-blog.example.com"
-           style="width:100%"></textarea><br>
-    <button type="submit">Start</button></form>
-    </body></html>
+    <!DOCTYPE html>
+    <html>
+    <head><title>Domain CDN Checker</title></head>
+    <body>
+        <h1>Domain CDN Checker</h1>
+        <p><a href="/view">View Database</a></p>
+
+        <form method="post" enctype="multipart/form-data">
+            <label>Account Owner / Batch Name:</label><br>
+            <input type="text" name="batch_name" required placeholder="Acme Corp" style="width:100%"><br><br>
+
+            <label>Option 1: Enter domains manually (one per line):</label><br>
+            <textarea name="domains" rows="8" placeholder="example.com\nshop.example.com" style="width:100%"></textarea><br><br>
+
+            <label>Option 2: Or upload Excel (.xlsx) with columns "Company Name" and "Domain Name":</label><br>
+            <input type="file" name="file" accept=".xlsx,.xls"><br><br>
+
+            <button type="submit">Start Processing</button>
+        </form>
+    </body>
+    </html>
     ''')
 
 @app.route('/download')

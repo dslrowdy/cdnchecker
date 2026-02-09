@@ -21,6 +21,7 @@ services:
       - ./app.py:/app/app.py
       - ./output:/app/output
       - ./data:/app/data
+      - ./uploads:/app/uploads
     expose:
       - "5001"
     restart: always
