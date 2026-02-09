@@ -118,7 +118,7 @@ cdn_header_sigs = {
     'Fastly': {'headers':['x-fastly-request-id','fastly-ff','fastly-debug'], 'server':'fastly'},
     'Cloudflare': {'headers':['cf-ray','cf-cache-status'], 'server':'cloudflare'},
     'Imperva': {'headers':['x-iinfo','incap-ses'], 'value_check':{'x-cdn':'incapsula'}, 'server':'incapsula'},
-    'Sucuri': {'x-sucuri-id','x-sucuri-cache'}, 'server': 'sucuri/cloudproxy',
+    'Sucuri': {'headers':['x-sucuri-id','x-sucuri-cache'], 'server': 'sucuri/cloudproxy'},
     'CDN77': {'headers':['x-cache-lb','x-77-cache','x-77-nzt','x-77-pop'], 'server':'cdn77'},
     'KeyCDN': {'headers':['x-edge-ip','x-edge-location','x-pull'], 'server':'keycdn-engine'},
     'Edgecast': {'headers':['x-ec-debug'],'server':'ecacc'},
@@ -504,10 +504,10 @@ def index():
 
         <form method="post" enctype="multipart/form-data">
             <label>Account Owner:</label><br>
-            <input type="text" name="batch_name" required placeholder="Acme Corp" style="width:100%"><br><br>
+            <input type="text" name="batch_name" required placeholder="John Smith" style="width:100%"><br><br>
 
             <label>Option 1: Enter domains manually (one per line):</label><br>
-            <textarea name="domains" rows="8" placeholder="example.com\nshop.example.com" style="width:100%"></textarea><br><br>
+            <textarea name="domains" rows="8" placeholder="www.example.com\nshop.example.com\napi.example.com" style="width:100%"></textarea><br><br>
 
             <label>Option 2: Or upload Excel (.xlsx) with columns "Company Name" and "Domain Name":</label><br>
             <input type="file" name="file" accept=".xlsx,.xls"><br><br>
