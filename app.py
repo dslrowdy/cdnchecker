@@ -565,11 +565,16 @@ def view_results():
     <h1>Domain Results</h1>
     <form method="get">
         Filter by Account Owner: <input type="text" name="owner" value="{owner}">
+        &nbsp;&nbsp;
         Filter by CDN: <input type="text" name="cdn" value="{cdn}">
+        &nbsp;&nbsp;    
         Show only last
         <input type="number" name="days" value="30" min="1" max="365" style="width:60px">
         days
+        &nbsp;&nbsp;
         <button type="submit">Filter</button>
+        &nbsp;&nbsp;
+        <a href="/view"><button type="button">Clear Filter</button></a>
     </form>
     <p>
         <a href="/download_filtered?owner={owner or ''}&cdn={cdn or ''}">Download Excel of filtered results</a>
