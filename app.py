@@ -272,6 +272,7 @@ def stream_results(domains, batch_name):
     <div id="progress">Processing...</div>
     <div id="complete" style="display:none">
         <p>Done. <a id="download-link" href="#" target="_blank">Download Excel</a></p>
+        <p><a href="/">Search Again</a> – start a new CDN discovery</p>
         <p><a href="/view">View Database</a></p>
     </div>
     <table><thead><tr>
@@ -336,7 +337,8 @@ def stream_results(domains, batch_name):
         yield f'<div style="color:red;">DB error: {e}</div>'
 
     # Signal frontend to show download link
-    yield f'<script>finish("{excel_filename}");</script></body></html>'
+    yield f'''<script>finish("{excel_filename}");</script>
+    </body></html>'''
 
 # Routes
 @app.route('/',methods=['GET','POST'])
@@ -429,6 +431,7 @@ def view_results():
     <p>
         <a href="/download_filtered?owner={owner or ''}&cdn={cdn or ''}">Download Excel of filtered results</a>
     </p>
+    <p><a href="/">Search Again</a> – start a new CDN discovery</p> 
     <table border="1" cellpadding="5">
     <tr>
         <th>AccountOwner</th><th>Site</th><th>CDN</th><th>CDN-Evidence</th>
