@@ -424,12 +424,13 @@ def stream_results(domains, batch_name, company_map=None):
             "DDoS Opp" TEXT,
             IP TEXT,
             ASN TEXT,
-            "ASN-Name" TEXT
+            "ASN-Name" TEXT,
+            Timestamp TEXT DEFAULT CURRENT_TIMESTAMP
         )''')
         for r in results:
             c.execute('''INSERT OR REPLACE INTO domain_results
-                (AccountOwner, CompanyName, Site, CDN, "CDN-Evidence", "ATO Opp", "ATO-Evidence", "CSP Opp", "CSP-Evidence", "DDoS Opp", IP, ASN, "ASN-Name")
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (AccountOwner, CompanyName, Site, CDN, "CDN-Evidence", "ATO Opp", "ATO-Evidence", "CSP Opp", "CSP-Evidence", "DDoS Opp", IP, ASN, "ASN-Name", Timestamp)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))''',
                 (r['AccountOwner'], r['CompanyName'], r['Site'], r['CDN'], r['CDN-Evidence'], str(r['ATO Opp']),
                  r['ATO-Evidence'], str(r['CSP Opp']), r['CSP-Evidence'], str(r['DDoS Opp']), r['IP'], r['ASN'], r['ASN-Name'])
             )
@@ -501,7 +502,7 @@ def index():
         <p><a href="/view">View Database</a></p>
 
         <form method="post" enctype="multipart/form-data">
-            <label>Account Owner / Batch Name:</label><br>
+            <label>Account Owner:</label><br>
             <input type="text" name="batch_name" required placeholder="Acme Corp" style="width:100%"><br><br>
 
             <label>Option 1: Enter domains manually (one per line):</label><br>
@@ -565,6 +566,9 @@ def view_results():
     <form method="get">
         Filter by Account Owner: <input type="text" name="owner" value="{owner}">
         Filter by CDN: <input type="text" name="cdn" value="{cdn}">
+        Show only last
+        <input type="number" name="days" value="30" min="1" max="365" style="width:60px">
+        days
         <button type="submit">Filter</button>
     </form>
     <p>
@@ -586,6 +590,7 @@ def view_results():
         <th>IP</th>
         <th>ASN</th>
         <th>ASN-Name</th>
+        <th>Timestamp</th>
     </tr>
     """.format(owner=owner or "", cdn=cdn or "")
 
@@ -614,6 +619,15 @@ def download_filtered():
     if cdn:
         filters.append("CDN = ?")
         params.append(cdn)
+    days = request.args.get('days')
+    if days:
+        try:
+            days_int = int(days)
+            if days_int > 0:
+                filters.append("Timestamp >= datetime('now', ?)")
+                params.append(f"-{days_int} days")
+        except ValueError:
+            pass  # ignore invalid days value
     if filters:
         query += " WHERE " + " AND ".join(filters)
 
