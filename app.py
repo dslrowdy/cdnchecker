@@ -352,12 +352,25 @@ def index():
     return render_template_string('''
     <html><head><title>Domain CDN Checker</title></head><body>
     <h1>Domain CDN Checker</h1>
-    <p>
-        <a href="/view">View Database</a>
-    </p> 
+    <p><a href="/view">View Database</a></p>
     <form method="post">
-    <label>Account Owner:</label><input type="text" name="batch_name" required style="width:100%"><br>
-    <label>Domains (one per line):</label><textarea name="domains" rows="10" required style="width:100%"></textarea><br>
+    <label>Account Owner:</label>
+        <input
+            type="text"
+            name="batch_name"
+            required
+            placeholder="John Smith"
+            style="width:100%"><br>
+    <label>Subdomains (one per line):</label>
+        <textarea
+            name="domains"
+            rows="10"
+            required
+            placeholder="www.example.com
+shop.example.com
+api.example.com
+blog.example.com"
+           style="width:100%"></textarea><br>
     <button type="submit">Start</button></form>
     </body></html>
     ''')
