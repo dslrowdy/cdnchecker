@@ -14,7 +14,6 @@ import gzip
 import bisect
 import json
 import sqlite3
-import time
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -233,24 +232,55 @@ def check_payment_page(response):
 def process_domain(domain):
     try:
         ip,asn,asn_name=get_ip_and_asn(domain)
-        cnames=get_cnames(domain)
-        headers={}
-        response=None
-        session=requests.Session()
-        session.max_redirects=10
-        user_agents=['Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Mozilla/5.0 (Macintosh)','Mozilla/5.0 (compatible; Googlebot/2.1)']
+        cnames = get_cnames(domain)
+        headers = {}
+        response = None
+        session = requests.Session()
+        session.max_redirects = 10
+        user_agents = ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Mozilla/5.0 (Macintosh)','Mozilla/5.0 (compatible; Googlebot/2.1)']
         for ua in user_agents:
-            try: r=session.get(f'https://{domain}',timeout=10,headers={'User-Agent':ua}); headers=r.headers; response=r; break
+            try:
+                r=session.get(f'https://{domain}',timeout=10,headers={'User-Agent':ua})
+                headers = r.headers
+                response = r
+                break
             except: 
-                try: r=session.get(f'http://{domain}',timeout=10,headers={'User-Agent':ua}); headers=r.headers; response=r; break
-                except: continue
-        cdn,evidence=detect_cdn(cnames,headers)
-        has_login,login_ev=check_login_page(response) if response else (False,'No response')
-        has_pay,pay_ev=check_payment_page(response) if response else (False,'No response')
-        return {'Site':domain,'CDN':cdn,'CDN-Evidence':evidence,'ATO':has_login,'ATO-Evidence':login_ev,
-                'CSP':has_pay,'CSP-Evidence':pay_ev,'IP':ip,'ASN':asn,'ASN-Name':asn_name}
-    except: return {'Site':domain,'CDN':'Unknown','CDN-Evidence':'Error','ATO':False,'ATO-Evidence':'Error',
-                    'CSP':False,'CSP-Evidence':'Error','IP':'Unknown','ASN':'Unknown','ASN-Name':'Error'}
+                try:
+                    r = session.get(f'http://{domain}',timeout=10,headers={'User-Agent':ua})
+                    headers = r.headers
+                    response = r
+                    break
+                except:
+                    continue
+
+        cdn,evidence = detect_cdn(cnames,headers)
+        has_login, login_ev=check_login_page(response) if response else (False,'No response')
+        has_pay,pay_ev = check_payment_page(response) if response else (False,'No response')
+        return {
+            'Site':domain,
+            'CDN':cdn,
+            'CDN-Evidence':evidence,
+            'ATO Opp':has_login,
+            'ATO-Evidence':login_ev,
+            'CSP Opp':has_pay,
+            'CSP-Evidence':pay_ev,
+            'IP':ip,
+            'ASN':asn,
+            'ASN-Name':asn_name
+        }
+    except:
+        return {
+            'Site':domain,
+            'CDN':'Unknown',
+            'CDN-Evidence':'Error',
+            'ATO Opp':False,
+            'ATO-Evidence':'Error',
+            'CSP Opp':False,
+            'CSP-Evidence':'Error',
+            'IP':'Unknown',
+            'ASN':'Unknown',
+            'ASN-Name':'Error'
+        }
 
 # Streaming results
 def stream_results(domains, batch_name, company_map=None):
@@ -266,6 +296,7 @@ def stream_results(domains, batch_name, company_map=None):
         th,td{border:1px solid #ddd;padding:5px}
         th{background-color:#f2f2f2}
     </style>
+
     <script>
     function appendResult(res){
         let t = document.getElementById('results-tbody');
@@ -276,14 +307,14 @@ def stream_results(domains, batch_name, company_map=None):
             <td>${res.Site}</td>
             <td>${res.CDN}</td>
             <td>${res['CDN-Evidence'] || ''}</td>
-            <td>${res.ATO}</td>
+            <td>${res['ATO Opp'] || ''}</td>
             <td>${res['ATO-Evidence'] || ''}</td>
-            <td>${res.CSP}</td>
+            <td>${res['CSP Opp'] || ''}</td>
             <td>${res['CSP-Evidence'] || ''}</td>
+            <td>${res['DDoS Opp'] === true ? 'True' : 'False'}</td>
             <td>${res.IP || ''}</td>
             <td>${res.ASN || ''}</td>
             <td>${res['ASN-Name'] || ''}</td>
-            <td>${res['Infrastructure DDoS'] === true ? 'True' : 'False'}</td>
         `;
     }
 
@@ -294,6 +325,7 @@ def stream_results(domains, batch_name, company_map=None):
         document.getElementById('complete').style.display='block';
     }
     </script>
+
     </head><body>
     <h1>Processing Domains...</h1>
     <div id="progress">Processing...</div>
@@ -303,16 +335,18 @@ def stream_results(domains, batch_name, company_map=None):
         <p><a href="/view">View Database</a></p>
     </div>
     <table><thead><tr>
-    <th>AccountOwner</th>
-    <th>CompanyName</th>
-    <th>Site</th><th>CDN</th>
-    <th>CDN-Evidence</th>
-    <th>ATO</th><th>ATO-Evidence</th>
-    <th>CSP</th>
-    <th>CSP-Evidence</th>
-    <th>IP</th><th>ASN</th>
-    <th>ASN-Name</th>
-    <th>Infrastructure DDoS</th>
+        <th>AccountOwner</th>
+        <th>CompanyName</th>
+        <th>Site</th><th>CDN</th>
+        <th>CDN-Evidence</th>
+        <th>ATO Opp</th>
+        <th>ATO-Evidence</th>
+        <th>CSP Opp</th>
+        <th>CSP-Evidence</th>
+        <th>DDoS Opp</th>
+        <th>IP</th>
+        <th>ASN</th>
+        <th>ASN-Name</th>
     </tr></thead><tbody id="results-tbody"></tbody></table>
     '''
 
@@ -332,7 +366,8 @@ def stream_results(domains, batch_name, company_map=None):
         res['AccountOwner'] = batch_name
         company = company_map.get(domain, batch_name) # fallback to batch_name
         res['CompanyName'] = company
-        # Compare CompanyName vs ASN-Name for 5-char sequence
+        
+        # DDoS Check - Compare CompanyName vs ASN-Name for 5-char sequence
         company_clean = (company or "").lower().replace(" ", "")
         asn_clean = (res.get('ASN-Name') or "").lower().replace(" ", "")
         has_match = False
@@ -342,7 +377,8 @@ def stream_results(domains, batch_name, company_map=None):
                 if substring in asn_clean:
                     has_match = True
                     break
-        res['Infrastructure DDoS'] = has_match   # ← this MUST be indented here (same level as has_match = False)
+        res['DDoS Opp'] = has_match   # ← this MUST be indented here (same level as has_match = False)
+
         batch_results.append(res)
         results.append(res)
         yield f'<script>appendResult({json.dumps(res)});</script>\n'
@@ -354,9 +390,9 @@ def stream_results(domains, batch_name, company_map=None):
 
         # Reorder columns so AccountOwner is first
         cols = [
-            'CompanyName', 'AccountOwner', 'Site', 'CDN', 'CDN-Evidence',
-            'ATO', 'ATO-Evidence', 'CSP', 'CSP-Evidence',
-            'IP', 'ASN', 'ASN-Name', 'Infrastructure DDoS'
+            'AccountOwner', 'CompanyName', 'Site', 'CDN', 'CDN-Evidence',
+            'ATO Opp', 'ATO-Evidence', 'CSP Opp', 'CSP-Evidence',
+            'DDoS Opp', 'IP', 'ASN', 'ASN-Name'
         ]
         
         # Only include columns that exist
@@ -373,15 +409,15 @@ def stream_results(domains, batch_name, company_map=None):
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS domain_results(
-            AccountOwner TEXT, Site TEXT PRIMARY KEY, CDN TEXT, "CDN-Evidence" TEXT, ATO TEXT, "ATO-Evidence" TEXT,
-            CSP TEXT, "CSP-Evidence" TEXT, IP TEXT, ASN TEXT, "ASN-Name" TEXT
+            AccountOwner TEXT, CompanyName TEXT, Site TEXT PRIMARY KEY, CDN TEXT, "CDN-Evidence" TEXT, "ATO Opp" TEXT, "ATO-Evidence" TEXT,
+            "CSP Opp" TEXT, "CSP-Evidence" TEXT, "DDoS Opp" TEXT, IP TEXT, ASN TEXT, "ASN-Name" TEXT
         )''')
         for r in results:
             c.execute('''INSERT OR REPLACE INTO domain_results
-                (AccountOwner, Site, CDN, "CDN-Evidence", ATO, "ATO-Evidence", CSP, "CSP-Evidence", IP, ASN, "ASN-Name")
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-                (r['AccountOwner'], r['Site'], r['CDN'], r['CDN-Evidence'], str(r['ATO']),
-                 r['ATO-Evidence'], str(r['CSP']), r['CSP-Evidence'], r['IP'], r['ASN'], r['ASN-Name'])
+                (AccountOwner, CompanyName, Site, CDN, "CDN-Evidence", "ATO Opp", "ATO-Evidence", "CSP Opp", "CSP-Evidence", "DDoS Opp", IP, ASN, "ASN-Name")
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (r['AccountOwner'], r['CompanyName'], r['Site'], r['CDN'], r['CDN-Evidence'], str(r['ATO Opp']),
+                 r['ATO-Evidence'], str(r['CSP Opp']), r['CSP-Evidence'], r['DDoS Opp'], r['IP'], r['ASN'], r['ASN-Name'])
             )
         conn.commit()
         conn.close()
@@ -523,9 +559,19 @@ def view_results():
     <p><a href="/">Search Again</a> – start a new CDN discovery</p> 
     <table border="1" cellpadding="5">
     <tr>
-        <th>AccountOwner</th><th>Site</th><th>CDN</th><th>CDN-Evidence</th>
-        <th>ATO</th><th>ATO-Evidence</th><th>CSP</th><th>CSP-Evidence</th>
-        <th>IP</th><th>ASN</th><th>ASN-Name</th>
+        <th>AccountOwner</th>
+        <th>CompanyName</th>
+        <th>Site</th>
+        <th>CDN</th>
+        <th>CDN-Evidence</th>
+        <th>ATO Opp</th>
+        <th>ATO-Evidence</th>
+        <th>CSP Opp</th>
+        <th>CSP-Evidence</th>
+        <th>DDoS Opp</th>
+        <th>IP</th>
+        <th>ASN</th>
+        <th>ASN-Name</th>
     </tr>
     """.format(owner=owner or "", cdn=cdn or "")
 
