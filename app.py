@@ -463,7 +463,19 @@ def index():
             for d in domains:
                 company_map[d] = batch_name  # fallback to batch name
 
-        # Option 2: Excel file upload (takes priority if both provided)
+        # Option 2: Paste from spreadsheet (Company Name <tab> Domain Name) *This is default when pasting from xlsx
+        pasted_rows = request.form.get('company_domains', '').strip()
+        if pasted_rows:
+            for line in pasted_rows.splitlines():
+                parts = line.split('\t')
+                if len(parts) >= 2:
+                    company = parts[0].strip()
+                    domain = parts[1].strip()
+                    if domain:
+                        domains.append(domain)
+                        company_map[domain] = company
+
+        # Option 3: Excel file upload (takes priority if both provided)
         if 'file' in request.files:
             file = request.files['file']
             if file and allowed_file(file.filename):
@@ -507,9 +519,19 @@ def index():
             <input type="text" name="batch_name" required placeholder="John Smith" style="width:100%"><br><br>
 
             <label>Option 1: Enter domains manually (one per line):</label><br>
-            <textarea name="domains" rows="8" placeholder="www.example.com\nshop.example.com\napi.example.com" style="width:100%"></textarea><br><br>
+            <textarea name="domains" rows="6"
+                placeholder="www.example.com
+shop.example.com"
+                style="width:100%"></textarea><br><br>
 
-            <label>Option 2: Or upload Excel (.xlsx) with columns "Company Name" and "Domain Name":</label><br>
+            <label>Option 2: Paste from spreadsheet (Company Name ⇥ Domain Name):</label><br>
+            <textarea name="company_domains" rows="6"
+                placeholder="Acme Corp	www.acme.com
+Widgets Inc	api.widgets.com"
+                style="width:100%"></textarea><br><br>
+
+            <label>Option 3: Upload Excel (.xlsx) with columns
+                <b>Company Name</b> and <b>Domain Name</b>:</label><br>
             <input type="file" name="file" accept=".xlsx,.xls"><br><br>
 
             <button type="submit">Start Processing</button>
