@@ -195,7 +195,7 @@ def detect_cdn(cnames, headers):
                     evidence=f"{h}:{headers[h]}"
                     break
         if matched: return cdn, evidence
-    return 'None','No matching CNAME or header'
+    return 'Unknown','No matching CNAME or header'
 
 def check_login_page(response):
     try:
