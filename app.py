@@ -368,13 +368,13 @@ def stream_results(domains, batch_name, company_map=None):
         company = company_map.get(domain, batch_name) # fallback to batch_name
         res['CompanyName'] = company
         
-        # DDoS Check - Compare CompanyName vs ASN-Name for 3-char sequence
+        # DDoS Check - Compare CompanyName vs ASN-Name for 5-char sequence
         company_clean = (company or "").lower().replace(" ", "")
         asn_clean = (res.get('ASN-Name') or "").lower().replace(" ", "")
         has_match = False
-        if len(company_clean) >= 5 and len(asn_clean) >= 3:
-            for i in range(len(company_clean) - 2):
-                substring = company_clean[i:i+3]
+        if len(company_clean) >= 5 and len(asn_clean) >= 5:
+            for i in range(len(company_clean) - 4):
+                substring = company_clean[i:i+5]
                 if substring in asn_clean:
                     has_match = True
                     break
