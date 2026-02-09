@@ -65,3 +65,6 @@ docker-compose.local.yml
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+# Upload Dir
+uploads/
