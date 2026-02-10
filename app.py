@@ -615,20 +615,36 @@ def index():
             <label>Account Owner:</label><br>
             <input type="text" name="batch_name" required placeholder="John Smith" style="width:100%"><br><br>
 
-            <label>Option 1: Enter domains manually (one per line):</label><br>
+            <label>
+                Option 1: Enter domains manually (one per line):
             <textarea name="domains" rows="6"
                 placeholder="www.example.com
 shop.example.com"
-                style="width:100%"></textarea><br><br>
+                style="width:100%"></textarea>
+            <br><br>
 
-            <label>Option 2: Paste from spreadsheet (Company Name ⇥ Domain Name):</label><br>
+
+            <label>
+            Option 2: Paste from spreadsheet (Company Name ⇥ Domain Name):
+            <br>
+            <span style="color: #e63946; font-weight: bold; margin-left: 2px;">*</span>
+            <small style="color: #555; font-style: italic;">
+                Including <strong>Company Name</strong> helps uncover Network DDoS opps but is blocked by Zscaler
+            </small>
+            </label><br>
             <textarea name="company_domains" rows="6"
                 placeholder="Acme Corp	www.acme.com
 Widgets Inc	api.widgets.com"
                 style="width:100%"></textarea><br><br>
 
             <label>Option 3: Upload Excel (.xlsx) with columns
-                <b>Company Name</b> and <b>Domain Name</b>:</label><br>
+                <b>Company Name</b> and <b>Domain Name</b>:
+            <br>
+            <span style="color: #e63946; font-weight: bold; margin-left: 2px;">*</span>
+            <small style="color: #555; font-style: italic;">
+                Including <strong>Company Name</strong> helps uncover Network DDoS opps but is blocked by Zscaler
+            </small>
+            </label><br>
             <input type="file" name="file" accept=".xlsx,.xls"><br><br>
 
             <button type="submit">Start Processing</button>
