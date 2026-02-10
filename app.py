@@ -466,8 +466,8 @@ def stream_results(domains, batch_name, company_map=None):
         res['CompanyName'] = company
         
         # DDoS Check - Compare CompanyName vs ASN-Name for 5-char sequence
-        company_clean = (company or "").lower().replace(" ", "")
-        asn_clean = (res.get('ASN-Name') or "").lower().replace(" ", "")
+        company_clean = re.sub(r'[^a-z]', '', (company or '').lower())
+        asn_clean = re.sub(r'[^a-z]', '', (res.get('ASN-Name') or '').lower())
         has_match = False
         if len(company_clean) >= 5 and len(asn_clean) >= 5:
             for i in range(len(company_clean) - 4):
