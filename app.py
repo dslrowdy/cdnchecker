@@ -131,9 +131,18 @@ cdn_dict = {
 # Updated CDN header signatures – improved Fastly detection
 # ────────────────────────────────────────────────
 cdn_header_sigs = {
+    'Imperva': {
+        'headers': ['x-iinfo', 'incap-ses'],
+        'value_check': {'x-cdn': 'incapsula'},
+        'server': 'incapsula'
+    },
     'Akamai': {
         'headers': ['x-akamai-request-id', 'x-akamai-session-info', 'x-akamai-edgescape'],
         'server': 'akamai'
+    },
+    'Cloudflare': {
+        'headers': ['cf-ray', 'cf-cache-status'],
+        'server': 'cloudflare'
     },
     'Cloudfront': {
         'headers': ['x-amz-cf-pop', 'x-amz-cf-id', 'x-amz-id-2', 'x-amz-request-id'],
@@ -150,15 +159,6 @@ cdn_header_sigs = {
         ],
         'server_substrings': ['fastly'],  # sometimes present
         # Optional: you can add value patterns later if needed
-    },
-    'Cloudflare': {
-        'headers': ['cf-ray', 'cf-cache-status'],
-        'server': 'cloudflare'
-    },
-    'Imperva': {
-        'headers': ['x-iinfo', 'incap-ses'],
-        'value_check': {'x-cdn': 'incapsula'},
-        'server': 'incapsula'
     },
     'Sucuri': {
         'headers': ['x-sucuri-id', 'x-sucuri-cache'],
@@ -217,7 +217,7 @@ def get_cnames(domain):
     return cnames
 
 def detect_cdn(cnames, headers):
-    # ── First: check CNAMEs (classic method) ───────────────────────────────
+    # ── Step 1: CNAME check – highest priority ───────────────────────────────
     best_match = None
     best_evidence = ''
 
@@ -230,12 +230,15 @@ def detect_cdn(cnames, headers):
                     if best_match is None or len(cname) > len(best_evidence):
                         best_match = cdn
                         best_evidence = f"CNAME: {cname}"
-                        # We can early return for CNAME if very confident, but we continue to check headers
 
-    # ── Then: check headers (stronger evidence in most cases) ───────────────
-    lower_headers = {k.lower(): v for k, v in headers.items()}  # values not lowercased yet
+    # If we found a solid CNAME match → trust it and return early
+    if best_match:
+        return best_match, best_evidence
 
-    # Special handling for Fastly – most reliable signals
+    # ── Step 2: Only if no CNAME match → check headers ───────────────────────
+    lower_headers = {k.lower(): v for k, v in headers.items()}
+
+    # Fastly – strong / specific indicators
     fastly_evidence = []
 
     if 'x-served-by' in lower_headers:
@@ -243,33 +246,33 @@ def detect_cdn(cnames, headers):
         if val.lower().startswith('cache-') or 'cache-' in val.lower():
             fastly_evidence.append(f"X-Served-By: {val}")
 
-    # Debug headers (only if client sent Fastly-Debug:1 – rare in normal traffic)
-    for debug_hdr in ['fastly-debug-path', 'fastly-debug-ttl']:
+    # Fastly debug headers (if present)
+    for debug_hdr in ['fastly-debug-path', 'fastly-debug-ttl', 'fastly-ff']:
         if debug_hdr in lower_headers:
             fastly_evidence.append(f"{debug_hdr.title()}: {headers.get(debug_hdr, '')[:60]}...")
 
     if fastly_evidence:
         return 'Fastly', ' | '.join(fastly_evidence)
 
-    # Fallback: generic header & server check for Fastly
+    # Fastly fallback: Server header
     server = headers.get('Server', '').lower()
     if 'fastly' in server:
         return 'Fastly', f"Server: {headers.get('Server')}"
 
-    # Generic header loop for all other CDNs
+    # Generic header checks for other CDNs
     for cdn, sigs in cdn_header_sigs.items():
-        if cdn == 'Fastly':  # we already handled Fastly specially
+        if cdn == 'Fastly':  # already handled above
             continue
 
         matched = False
         evidence = ''
 
-        # Server check
+        # Server match
         if 'server' in sigs and sigs['server'] in server:
             matched = True
             evidence = f"Server: {headers.get('Server')}"
 
-        # Header existence
+        # Any of the signature headers present
         if 'headers' in sigs:
             for h in sigs['headers']:
                 if h.lower() in lower_headers:
@@ -286,14 +289,10 @@ def detect_cdn(cnames, headers):
                     break
 
         if matched:
-            return cdn, evidence or 'Matched signature'
+            return cdn, evidence or 'Matched header signature'
 
-    # Final fallback
-    if best_match:
-        return best_match, best_evidence
-
+    # Final fallback: nothing found
     return 'Unknown', 'No matching CNAME or header'
-
 
 def check_login_page(response):
     try:
