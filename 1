@@ -243,6 +243,16 @@ def detect_cdn(cnames, headers):
         if val.lower().startswith('cache-') or 'cache-' in val.lower():
             fastly_evidence.append(f"X-Served-By: {val}")
 
+    if 'x-cache' in lower_headers:
+        val = headers.get('X-Cache', '').upper()
+        if 'HIT' in val or 'MISS' in val:
+            fastly_evidence.append(f"X-Cache: {val}")
+
+    if 'x-cache-hits' in lower_headers:
+        val = headers.get('X-Cache-Hits', '')
+        if re.match(r'^\d+(,\s*\d+)*$', val.strip()):  # numbers or comma-separated numbers
+            fastly_evidence.append(f"X-Cache-Hits: {val}")
+
     # Debug headers (only if client sent Fastly-Debug:1 – rare in normal traffic)
     for debug_hdr in ['fastly-debug-path', 'fastly-debug-ttl']:
         if debug_hdr in lower_headers:
