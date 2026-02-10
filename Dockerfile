@@ -1,12 +1,33 @@
-FROM python:3.9-slim
+# Use a more modern and still-slim base image
+FROM python:3.11-slim
 
+# Set working directory
 WORKDIR /app
 
+# Install system dependencies (sqlite3 + any others you might need)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install requirements first (better layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+# Copy application code
+COPY . .
 
-RUN apt-get update && apt-get install -y sqlite3 && rm -rf /var/lib/apt/lists/*
+# Expose port (informational – not strictly required)
+EXPOSE 5001
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--log-level", "debug", "--timeout", "3600", "app:app"]
+# Run with gunicorn + gevent for real concurrency
+CMD ["gunicorn", \
+     "--worker-class", "gevent", \
+     "--workers", "3", \
+     "--threads", "20", \
+     "--worker-connections", "100", \
+     "--timeout", "900", \
+     "--graceful-timeout", "30", \
+     "--bind", "0.0.0.0:5001", \
+     "--log-level", "debug", \
+     "app:app"]
