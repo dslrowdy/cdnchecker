@@ -19,6 +19,7 @@ services:
     volumes:
       - ./app.py:/app/app.py
       - ./output:/app/output
+      - ./db:/app/db
       - ./data:/app/data
       - ./uploads:/app/uploads
     expose:

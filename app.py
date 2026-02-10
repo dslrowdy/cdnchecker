@@ -20,6 +20,18 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Setup abdolute paths to preserver db file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
+DB_DIR = os.path.join(BASE_DIR, 'db')
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(DB_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(DB_DIR, 'results.db')
+
+
 # Cleanup excel files after one hour when someone accesses
 OUTPUT_DIR = './output'
 MAX_FILE_AGE = 3600  # 1 hour in seconds
@@ -29,6 +41,9 @@ def cleanup_old_files():
     if not os.path.exists(OUTPUT_DIR):
         return
     for f in os.listdir(OUTPUT_DIR):
+        if not f.endswith(('.xlsx', '.xls')):
+            continue
+    
         path = os.path.join(OUTPUT_DIR, f)
         if os.path.isfile(path):
             age = now - os.path.getmtime(path)
@@ -358,8 +373,6 @@ def stream_results(domains, batch_name, company_map=None):
     excel_filename = f'results_{uuid.uuid4().hex}.xlsx'
     excel_path = os.path.join(output_dir, excel_filename)
 
-    db_file = os.path.join(output_dir, 'results.db')
-
     batch_results = []
     # Process each domain
     for domain in domains:
@@ -410,7 +423,7 @@ def stream_results(domains, batch_name, company_map=None):
 
     # Save to SQLite (optional, keep as-is)
     try:
-        conn = sqlite3.connect(db_file)
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS domain_results(
             AccountOwner TEXT,
@@ -553,7 +566,7 @@ def download_file():
 @app.route('/view')
 def view_results():
     cleanup_old_files()  # optional, keep your DB tidy
-    conn = sqlite3.connect('./output/results.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -633,7 +646,7 @@ def download_filtered():
     owner = request.args.get('owner')
     cdn = request.args.get('cdn')
 
-    conn = sqlite3.connect('./output/results.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 

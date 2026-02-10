@@ -31,6 +31,7 @@ __pycache__/
 # Project runtime output & generated files
 # =============================================
 output/
+db/
 *.xlsx          # all excel results
 results.db      # sqlite database
 *.log
