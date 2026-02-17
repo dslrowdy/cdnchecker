@@ -17,35 +17,45 @@ import sqlite3
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
+# Configure logging for application monitoring
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Setup abdolute paths to preserver db file
+# Setup absolute paths to preserve database file across deployments
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
 DB_DIR = os.path.join(BASE_DIR, 'db')
 
+# Create necessary directories if they don't exist
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(DB_DIR, exist_ok=True)
 
+# Define database path for persistent storage
 DB_PATH = os.path.join(DB_DIR, 'results.db')
 
-
-# Cleanup excel files after one hour when someone accesses
-OUTPUT_DIR = './output'
+# Configuration for file cleanup and uploads
 MAX_FILE_AGE = 3600  # 1 hour in seconds
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+UPLOAD_FOLDER = './uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 def cleanup_old_files():
+    """
+    Clean up Excel files older than MAX_FILE_AGE seconds.
+    Prevents accumulation of old result files in the output directory.
+    """
     now = time.time()
     if not os.path.exists(OUTPUT_DIR):
         return
+    
+    # Only process Excel files
     for f in os.listdir(OUTPUT_DIR):
         if not f.endswith(('.xlsx', '.xls')):
             continue
-    
+
         path = os.path.join(OUTPUT_DIR, f)
         if os.path.isfile(path):
             age = now - os.path.getmtime(path)
@@ -56,62 +66,76 @@ def cleanup_old_files():
                 except Exception as e:
                     logger.warning(f"Failed to delete {f}: {e}")
 
-# Allowed extension for upload
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-
 def allowed_file(filename):
+    """
+    Check if uploaded file has an allowed extension.
+    
+    Args:
+        filename (str): Name of the file to check
+        
+    Returns:
+        bool: True if file extension is allowed, False otherwise
+    """
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-UPLOAD_FOLDER = './uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# DNS resolver setup
+# DNS resolver configuration with public DNS servers for reliability
 resolver = dns.resolver.Resolver()
-resolver.nameservers = ['8.8.8.8', '8.8.4.4', '1.1.1.1']
+resolver.nameservers = ['8.8.8.8', '8.8.4.4', '1.1.1.1']  # Google & Cloudflare DNS
 resolver.timeout = 5
 resolver.lifetime = 10
 
-# Load ip2asn database
 def load_asn_db():
+    """
+    Load IP to ASN mapping database from ip2asn.com.
+    Downloads and extracts the database if not present locally.
+    Returns sorted list of IP ranges with ASN information for fast lookups.
+    """
     data_dir = './data'
     os.makedirs(data_dir, exist_ok=True)
     asn_file = os.path.join(data_dir, 'ip2asn-v4.tsv')
 
+    # Download ASN database if not present
     if not os.path.exists(asn_file):
         logger.info("Downloading ip2asn-v4.tsv...")
         url = 'https://iptoasn.com/data/ip2asn-v4.tsv.gz'
         tmp_gz = asn_file + '.tmp.gz'
         tmp_tsv = asn_file + '.tmp'
 
+        # Stream download to handle large files efficiently
         with requests.get(url, stream=True) as r:
             r.raise_for_status()
             with open(tmp_gz, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
 
+        # Extract gzipped file
         with gzip.open(tmp_gz, 'rb') as f_in, open(tmp_tsv, 'wb') as f_out:
             f_out.write(f_in.read())
 
+        # Replace temporary file with final file
         os.replace(tmp_tsv, asn_file)
         os.remove(tmp_gz)
         logger.info("ASN DB downloaded and extracted.")
 
-    # Load into memory
+    # Load data into memory for fast lookups
     df = pd.read_csv(asn_file, sep='\t', names=['start_ip','end_ip','asn','country','asn_name'])
     ip_ranges = []
+    
+    # Convert IP addresses to integers for efficient range searching
     for _, row in df.iterrows():
         start_ip = int(''.join(f'{int(i):08b}' for i in row['start_ip'].split('.')), 2)
         end_ip = int(''.join(f'{int(i):08b}' for i in row['end_ip'].split('.')), 2)
         ip_ranges.append((start_ip, end_ip, row['asn'], row['asn_name']))
-    ip_ranges.sort()
+    
+    ip_ranges.sort()  # Sort for binary search
     return ip_ranges
 
+# Global variables for ASN database and results storage
 asn_db = load_asn_db()
 results = []
 
-# CDN detection patterns
+# CDN detection patterns - CNAME based detection
 cdn_dict = {
     'Akamai': ['akamai.net','akamaiedge.net','edgesuite.net','edgekey.net','akamaitechnologies.com','akamaitech.net'],
     'Cloudfront': ['cloudfront.net'],
@@ -129,9 +153,8 @@ cdn_dict = {
     'StackPath': ['cdn.jsdelivr.net','maxcdn.bootstrapcdn.com'],
 }
 
-# ────────────────────────────────────────────────
-# Updated CDN header signatures – improved Fastly detection
-# ────────────────────────────────────────────────
+# CDN detection patterns - HTTP header based detection
+# Updated CDN header signatures with improved Fastly detection
 cdn_header_sigs = {
     'Imperva': {
         'headers': ['x-iinfo', 'incap-ses'],
@@ -152,55 +175,72 @@ cdn_header_sigs = {
     },
     'Fastly': {
         'headers': [
-            'x-served-by',      # ← most reliable
-            'x-cache',          # ← very reliable
-            'x-cache-hits',     # ← very reliable
+            'x-served-by',      # Most reliable indicator
+            'x-cache',          # Very reliable
+            'x-cache-hits',     # Very reliable
             'fastly-debug-path',
             'fastly-debug-ttl',
             'fastly-ff',
         ],
-        'server_substrings': ['fastly'],  # sometimes present
-        # Optional: you can add value patterns later if needed
+        'server_substrings': ['fastly'],  # Sometimes present in Server header
     },
     'Sucuri': {
         'headers': ['x-sucuri-id', 'x-sucuri-cache'],
-        'server': 'sucuri/cloudproxy'},
+        'server': 'sucuri/cloudproxy'
+    },
     'Azure CDN': {
         'headers':['x-azure-ref'],
-        'server':'microsoft-azure-application-gateway'},
+        'server':'microsoft-azure-application-gateway'
+    },
     'Google Cloud CDN': {
         'headers':['x-goog-generation','x-goog-metageneration','x-goog-hash','x-goog-stored-content-length'],
-        'server':'google frontend'},
+        'server':'google frontend'
+    },
 }
 
-# Optional: you can keep or expand this too
-cdn_dict = {
-    'Akamai': ['akamai.net', 'akamaiedge.net', 'edgesuite.net', 'edgekey.net', 'akamaitechnologies.com'],
-    'Cloudfront': ['cloudfront.net'],
-    'Fastly': ['fastly.net', 'fastlylb.net', 'fastly.com'],   # ← added fastly.com just in case
-    'Cloudflare': ['cloudflare.com', 'cloudflare.net', 'cloudflare-dnssec.com'],
-    # ... rest unchanged ...
-}
-
-# Utility functions
 def get_ip_and_asn(domain):
+    """
+    Resolve domain to IP address and lookup ASN information.
+    
+    Args:
+        domain (str): Domain name to resolve
+        
+    Returns:
+        tuple: (ip_address, asn_number, asn_name) or ('Unknown', 'Unknown', error_message)
+    """
     try:
         ip = socket.gethostbyname(domain)
     except Exception:
         return 'Unknown','Unknown','Unknown'
+    
     if not asn_db:
         return ip,'Unknown','ASN DB not loaded'
+    
+    # Convert IP to integer for range comparison
     ip_int = int(''.join(f'{int(i):08b}' for i in ip.split('.')),2)
     start_ips = [r[0] for r in asn_db]
+    
+    # Binary search for IP range
     idx = bisect.bisect_right(start_ips, ip_int)-1
     if idx>=0 and asn_db[idx][0]<=ip_int<=asn_db[idx][1]:
         return ip, str(asn_db[idx][2]), asn_db[idx][3]
     return ip,'Unknown','No ASN match'
 
 def get_cnames(domain):
+    """
+    Recursively resolve CNAME records for a domain.
+    
+    Args:
+        domain (str): Domain name to resolve CNAMEs for
+        
+    Returns:
+        list: List of CNAME targets
+    """
     cnames=[]
     current=domain.strip().lower()
     seen=set()
+    
+    # Follow CNAME chain until no more CNAMEs or cycle detected
     while current:
         if current in seen:
             break
@@ -219,7 +259,18 @@ def get_cnames(domain):
     return cnames
 
 def detect_cdn(cnames, headers):
-    # ── Step 1: CNAME check – highest priority ───────────────────────────────
+    """
+    Detect CDN based on CNAMEs and HTTP response headers.
+    Uses a two-step approach: CNAME checking (priority) then header checking.
+    
+    Args:
+        cnames (list): List of CNAME records
+        headers (dict): HTTP response headers
+        
+    Returns:
+        tuple: (cdn_name, evidence_string)
+    """
+    # Step 1: CNAME check - highest priority
     best_match = None
     best_evidence = ''
 
@@ -237,10 +288,10 @@ def detect_cdn(cnames, headers):
     if best_match:
         return best_match, best_evidence
 
-    # ── Step 2: Only if no CNAME match → check headers ───────────────────────
+    # Step 2: Only if no CNAME match → check headers
     lower_headers = {k.lower(): v for k, v in headers.items()}
 
-    # Fastly – strong / specific indicators
+    # Fastly detection - strong / specific indicators
     fastly_evidence = []
 
     if 'x-served-by' in lower_headers:
@@ -297,54 +348,118 @@ def detect_cdn(cnames, headers):
     return 'Unknown', 'No matching CNAME or header'
 
 def check_login_page(response):
+    """
+    Analyze HTML content to detect login pages.
+    
+    Args:
+        response (requests.Response): HTTP response object
+        
+    Returns:
+        tuple: (has_login_page, evidence_string)
+    """
     try:
         soup=BeautifulSoup(response.text,'html.parser')
         text=' '.join(soup.get_text(strip=False).lower().split())
+        
+        # Common login-related keywords
         patterns=[r'(login|sign[- ]?in|signin|auth)', r'(username|password|account)', r'(remember me|forgot password|manage account)']
         for p in patterns:
             m=re.search(p,text,re.I)
-            if m: return True,f"Keyword detected:{m.group(0)}"
+            if m: 
+                return True,f"Keyword detected:{m.group(0)}"
+        
+        # Check forms for login indicators
         forms=soup.find_all('form')
         for f in forms:
             action=f.get('action','').lower()
-            if any(re.search(p,action,re.I) for p in patterns): return True,f"Form action:{action}"
+            if any(re.search(p,action,re.I) for p in patterns): 
+                return True,f"Form action:{action}"
+            
             inputs=f.find_all('input')
             has_text=False; has_pass=False
+            
+            # Look for username/password input fields
             for inp in inputs:
                 t=inp.get('type','').lower(); n=inp.get('name','').lower()
-                if t in ['text','email'] or 'username' in n or 'email' in n: has_text=True
-                if t=='password' or 'password' in n: has_pass=True
-            if has_text and has_pass: return True,'Form with text/email and password detected'
+                if t in ['text','email'] or 'username' in n or 'email' in n: 
+                    has_text=True
+                if t=='password' or 'password' in n: 
+                    has_pass=True
+            
+            if has_text and has_pass: 
+                return True,'Form with text/email and password detected'
+        
         return False,'No login indicators found'
-    except: return False,'Error checking login page'
+    except: 
+        return False,'Error checking login page'
 
 def check_payment_page(response):
+    """
+    Analyze HTML content to detect payment pages.
+    
+    Args:
+        response (requests.Response): HTTP response object
+        
+    Returns:
+        tuple: (has_payment_page, evidence_string)
+    """
     try:
         soup=BeautifulSoup(response.text,'html.parser')
         text=soup.get_text().lower()
-        patterns=[r'\b(payment|checkout|billing|credit card|paypal|stripe)\b', r'\b(card number|expiration date|cvv|cvc)\b', r'\b(purchase|buy now|pay bill|shopping cart)\b']
+        
+        # Payment-related keywords
+        patterns=[
+            r'\b(payment|checkout|billing|credit card|paypal|stripe)\b', 
+            r'\b(card number|expiration date|cvv|cvc)\b', 
+            r'\b(purchase|buy now|pay bill|shopping cart)\b'
+        ]
+        
         for p in patterns:
             m=re.search(p,text,re.I)
-            if m: return True,f"Keyword detected:{m.group(0)}"
+            if m: 
+                return True,f"Keyword detected:{m.group(0)}"
+        
         return False,'No payment indicators found'
-    except: return False,'Error checking payment page'
+    except: 
+        return False,'Error checking payment page'
 
 def process_domain(domain):
+    """
+    Process a single domain through all checks.
+    
+    Args:
+        domain (str): Domain name to analyze
+        
+    Returns:
+        dict: Dictionary containing analysis results
+    """
     try:
+        # Get IP and ASN information
         ip,asn,asn_name=get_ip_and_asn(domain)
+        
+        # Get CNAME records
         cnames = get_cnames(domain)
+        
+        # Fetch HTTP headers using multiple User-Agents
         headers = {}
         response = None
         session = requests.Session()
         session.max_redirects = 10
-        user_agents = ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Mozilla/5.0 (Macintosh)','Mozilla/5.0 (compatible; Googlebot/2.1)']
+        
+        # Try different User-Agents to handle various server responses
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Mozilla/5.0 (Macintosh)',
+            'Mozilla/5.0 (compatible; Googlebot/2.1)'
+        ]
+        
         for ua in user_agents:
             try:
                 r=session.get(f'https://{domain}',timeout=10,headers={'User-Agent':ua})
                 headers = r.headers
                 response = r
                 break
-            except: 
+            except:
                 try:
                     r = session.get(f'http://{domain}',timeout=10,headers={'User-Agent':ua})
                     headers = r.headers
@@ -353,9 +468,13 @@ def process_domain(domain):
                 except:
                     continue
 
+        # Detect CDN
         cdn,evidence = detect_cdn(cnames,headers)
+        
+        # Check for login and payment pages
         has_login, login_ev=check_login_page(response) if response else (False,'No response')
         has_pay,pay_ev = check_payment_page(response) if response else (False,'No response')
+        
         return {
             'Site':domain,
             'CDN':cdn,
@@ -382,12 +501,24 @@ def process_domain(domain):
             'ASN-Name':'Error'
         }
 
-# Streaming results
 def stream_results(domains, batch_name, company_map=None):
+    """
+    Process domains and stream results to client as HTML.
+    
+    Args:
+        domains (list): List of domain names to process
+        batch_name (str): Name for this batch of domains
+        company_map (dict): Mapping of domain -> company name
+        
+    Yields:
+        str: HTML fragments with JavaScript to update results in real-time
+    """
     if company_map is None:
         company_map = {}
 
     import uuid
+    
+    # Initial HTML template with JavaScript for dynamic updates
     yield '''
     <!DOCTYPE html>
     <html><head><title>Results</title>
@@ -453,18 +584,19 @@ def stream_results(domains, batch_name, company_map=None):
     output_dir = './output'
     os.makedirs(output_dir, exist_ok=True)
 
-    # Generate unique Excel filename
+    # Generate unique filename for Excel output
     excel_filename = f'results_{uuid.uuid4().hex}.xlsx'
     excel_path = os.path.join(output_dir, excel_filename)
 
     batch_results = []
-    # Process each domain
+    
+    # Process each domain and stream results
     for domain in domains:
         res = process_domain(domain)
         res['AccountOwner'] = batch_name
         company = company_map.get(domain, batch_name) # fallback to batch_name
         res['CompanyName'] = company
-        
+
         # DDoS Check - Compare CompanyName vs ASN-Name for 5-char sequence
         company_clean = re.sub(r'[^a-z]', '', (company or '').lower())
         asn_clean = re.sub(r'[^a-z]', '', (res.get('ASN-Name') or '').lower())
@@ -480,22 +612,22 @@ def stream_results(domains, batch_name, company_map=None):
         batch_results.append(res)
         results.append(res)
         yield f'<script>appendResult({json.dumps(res)});</script>\n'
-        time.sleep(0.05)
+        time.sleep(0.05)  # Small delay to prevent overwhelming the client
 
-    # Save Excel for this batch
+    # Save results to Excel file
     try:
         df = pd.DataFrame(batch_results)
         # Convert DDoS Opp to "True"/"False" string
         if 'DDoS Opp' in df.columns:
             df['DDoS Opp'] = df['DDoS Opp'].map({True: 'True', False: 'False'})
 
-        # Reorder columns so AccountOwner is first
+        # Reorder columns for consistency
         cols = [
             'AccountOwner', 'CompanyName', 'Site', 'CDN', 'CDN-Evidence',
             'ATO Opp', 'ATO-Evidence', 'CSP Opp', 'CSP-Evidence',
             'DDoS Opp', 'IP', 'ASN', 'ASN-Name'
         ]
-        
+
         # Only include columns that exist
         existing_cols = [c for c in cols if c in df.columns]
         df = df[existing_cols]
@@ -504,11 +636,12 @@ def stream_results(domains, batch_name, company_map=None):
     except Exception as e:
         yield f'<div style="color:red;">Error saving Excel: {e}</div>'
 
-
-    # Save to SQLite (optional, keep as-is)
+    # Save results to SQLite database
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
+        
+        # Create table if it doesn't exist
         c.execute('''CREATE TABLE IF NOT EXISTS domain_results(
             AccountOwner TEXT,
             CompanyName TEXT,
@@ -525,6 +658,8 @@ def stream_results(domains, batch_name, company_map=None):
             "ASN-Name" TEXT,
             Timestamp TEXT DEFAULT CURRENT_TIMESTAMP
         )''')
+        
+        # Insert or update results
         for r in results:
             c.execute('''INSERT OR REPLACE INTO domain_results
                 (AccountOwner, CompanyName, Site, CDN, "CDN-Evidence", "ATO Opp", "ATO-Evidence", "CSP Opp", "CSP-Evidence", "DDoS Opp", IP, ASN, "ASN-Name", Timestamp)
@@ -537,14 +672,20 @@ def stream_results(domains, batch_name, company_map=None):
     except Exception as e:
         yield f'<div style="color:red;">DB error: {e}</div>'
 
-    # Signal frontend to show download link
+    # Signal completion to frontend
     yield f'''<script>finish("{excel_filename}");</script>
     </body></html>'''
 
-# Routes
+# Flask routes
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    """
+    Main page for submitting domains to analyze.
+    Supports three input methods: textarea, paste from spreadsheet, or Excel upload.
+    Handles both GET (show form) and POST (process domains) requests.
+    """
     cleanup_old_files()
+    
     if request.method == 'POST':
         batch_name = request.form.get('batch_name', '').strip()
         if not batch_name:
@@ -553,14 +694,14 @@ def index():
         domains = []
         company_map = {}  # domain → company name
 
-        # Option 1: textarea
+        # Option 1: textarea - simple domain list
         domains_text = request.form.get('domains', '').strip()
         if domains_text:
             domains = [d.strip() for d in domains_text.splitlines() if d.strip()]
             for d in domains:
                 company_map[d] = batch_name  # fallback to batch name
 
-        # Option 2: Paste from spreadsheet (Company Name <tab> Domain Name) *This is default when pasting from xlsx
+        # Option 2: Paste from spreadsheet (Company Name <tab> Domain Name)
         pasted_rows = request.form.get('company_domains', '').strip()
         if pasted_rows:
             for line in pasted_rows.splitlines():
@@ -602,7 +743,7 @@ def index():
         # Pass company mapping to stream_results
         return Response(stream_results(domains, batch_name, company_map), mimetype='text/html')
 
-    # GET - show form with both options
+    # GET - show form with all input options
     return render_template_string('''
     <!DOCTYPE html>
     <html>
@@ -655,9 +796,19 @@ Widgets Inc	api.widgets.com"
 
 @app.route('/download')
 def download_file():
+    """
+    Download generated Excel file.
+    
+    Query Parameters:
+        file (str): Filename to download
+        
+    Returns:
+        File response or error message
+    """
     file = request.args.get('file')
     if not file:
         return "File parameter missing", 400
+    
     path = os.path.join('./output', file)
     if os.path.exists(path):
         return send_file(path, as_attachment=True, download_name='results.xlsx')
@@ -665,12 +816,23 @@ def download_file():
 
 @app.route('/view')
 def view_results():
-    cleanup_old_files()  # optional, keep your DB tidy
+    """
+    View results stored in SQLite database with filtering capabilities.
+    
+    Query Parameters:
+        owner (str): Filter by AccountOwner
+        cdn (str): Filter by CDN
+        
+    Returns:
+        HTML page with results table
+    """
+    cleanup_old_files()  # Keep database tidy
+    
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
-    # Optional filtering by AccountOwner or CDN via query parameters
+    # Handle optional filtering
     owner = request.args.get('owner')
     cdn = request.args.get('cdn')
 
@@ -692,8 +854,8 @@ def view_results():
     rows = c.fetchall()
     conn.close()
 
-    # Render as HTML table
-    owner = request.args.get("owner", "")      # default to empty string if missing
+    # Generate HTML response with filter form
+    owner = request.args.get("owner", "")
     cdn = request.args.get("cdn", "")
 
     html = f"""
@@ -703,7 +865,7 @@ def view_results():
         Filter by Account Owner: <input type="text" name="owner" value="{owner}">
         &nbsp;&nbsp;
         Filter by CDN: <input type="text" name="cdn" value="{cdn}">
-        &nbsp;&nbsp;    
+        &nbsp;&nbsp;
         Show only last
         <input type="number" name="days" value="30" min="1" max="365" style="width:60px">
         days
@@ -715,10 +877,11 @@ def view_results():
     <p>
         <a href="/download_filtered?owner={owner or ''}&cdn={cdn or ''}">Download Excel of filtered results</a>
     </p>
-    <p><a href="/">Search Again</a> – start a new CDN discovery</p> 
+    <p><a href="/">Search Again</a> – start a new CDN discovery</p>
     <table border="1" cellpadding="5">
     <tr>
         <th>AccountOwner</th>
+
         <th>CompanyName</th>
         <th>Site</th>
         <th>CDN</th>
@@ -743,9 +906,21 @@ def view_results():
 
 @app.route('/download_filtered')
 def download_filtered():
+    """
+    Download filtered results as Excel file.
+    
+    Query Parameters:
+        owner (str): Filter by AccountOwner
+        cdn (str): Filter by CDN
+        days (int): Filter by number of recent days
+        
+    Returns:
+        Excel file download response
+    """
     owner = request.args.get('owner')
     cdn = request.args.get('cdn')
 
+    # Query database with filters
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -760,6 +935,8 @@ def download_filtered():
     if cdn:
         filters.append("CDN = ?")
         params.append(cdn)
+    
+    # Optional date filtering
     days = request.args.get('days')
     if days:
         try:
@@ -769,6 +946,7 @@ def download_filtered():
                 params.append(f"-{days_int} days")
         except ValueError:
             pass  # ignore invalid days value
+            
     if filters:
         query += " WHERE " + " AND ".join(filters)
 
@@ -776,14 +954,13 @@ def download_filtered():
     rows = c.fetchall()
     conn.close()
 
+    # Convert to DataFrame and save as Excel
     df = pd.DataFrame([dict(row) for row in rows])
     output_path = './output/temp_filtered.xlsx'
     df.to_excel(output_path, index=False)
 
     return send_file(output_path, as_attachment=True, download_name='filtered_results.xlsx')
 
-
 if __name__=='__main__':
-    app.run(host='0.0.0.0',port=5001)
-
+    app.run(host='0.0.0.0', port=5001)
 
