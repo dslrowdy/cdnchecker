@@ -1,5 +1,4 @@
 # CDN Checker App
-#
 
 ## Installing on Another Machine
 

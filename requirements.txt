@@ -1,8 +1,11 @@
-dnspython==2.4.2
-requests==2.31.0
-beautifulsoup4==4.12.2
 flask==2.3.3
+gunicorn==22.0.0
+gevent==24.2.1
+requests==2.31.0
+dnspython==2.4.2
+beautifulsoup4==4.12.2
 pandas==2.0.3
 openpyxl==3.1.2
-gunicorn==20.1.0
 numpy==1.24.4
+flask-limiter>=3.5.0
+

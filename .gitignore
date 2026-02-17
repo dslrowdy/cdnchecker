@@ -31,6 +31,7 @@ __pycache__/
 # Project runtime output & generated files
 # =============================================
 output/
+db/
 *.xlsx          # all excel results
 results.db      # sqlite database
 *.log
@@ -65,3 +66,6 @@ docker-compose.local.yml
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+# Upload Dir
+uploads/
