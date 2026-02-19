@@ -141,7 +141,7 @@ cdn_dict = {
     'Cloudfront': ['cloudfront.net'],
     'Fastly': ['fastly.net','fastlylb.net', 'fastly.com'],
     'Cloudflare': ['cloudflare.com','cloudflare.net'],
-    'Imperva': ['incapdns.net'],
+    'Imperva': ['incapdns.net','impervadns.net'],
     'Sucuri': ['sucuri.net'],
     'CDN77': ['cdn77.com'],
     'KeyCDN': ['kxcdn.com'],
